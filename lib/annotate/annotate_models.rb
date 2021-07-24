@@ -41,12 +41,15 @@ module AnnotateModels
 
   MAGIC_COMMENT_MATCHER = Regexp.new(/(^#\s*encoding:.*(?:\n|r\n))|(^# coding:.*(?:\n|\r\n))|(^# -\*- coding:.*(?:\n|\r\n))|(^# -\*- encoding\s?:.*(?:\n|\r\n))|(^#\s*frozen_string_literal:.+(?:\n|\r\n))|(^# -\*- frozen_string_literal\s*:.+-\*-(?:\n|\r\n))/).freeze
 
+  # match a basic nested module block with no extra lines between modules.
+  MODULE_BLOCK_MATCHER = Regexp.new(/( *module \w+(\n|\r\n))+/).freeze
+
   class << self
     def annotate_pattern(options = {})
       if options[:wrapper_open]
-        return /(?:^(\n|\r\n)?# (?:#{options[:wrapper_open]}).*(\n|\r\n)?# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)(#.*(\n|\r\n))*(\n|\r\n)*)|^(\n|\r\n)?# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)(#.*(\n|\r\n))*(\n|\r\n)*/
+        return /(?:^(\n|\r\n)? *# (?:#{options[:wrapper_open]}).*(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)( *#.*(\n|\r\n))*(\n|\r\n)*)|^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)( *#.*(\n|\r\n))*(\n|\r\n)*/
       end
-      /^(\n|\r\n)?# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)(#.*(\n|\r\n))*(\n|\r\n)*/
+      /^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)( *#.*(\n|\r\n))*(\n|\r\n)*/
     end
 
     def model_dir
@@ -369,13 +372,16 @@ module AnnotateModels
       return false if old_content =~ /#{SKIP_ANNOTATION_PREFIX}.*\n/
 
       # Ignore the Schema version line because it changes with each migration
-      header_pattern = /(^# Table name:.*?\n(#.*[\r]?\n)*[\r]?)/
+      header_pattern = /(^ *# Table name:.*?\n( *#.*[\r]?\n)*[\r]?)/
       old_header = old_content.match(header_pattern).to_s
       new_header = info_block.match(header_pattern).to_s
 
-      column_pattern = /^#[\t ]+[\w\*\.`]+[\t ]+.+$/
+      column_pattern = /^ *#[\t ]+[\w\*\.`]+[\t ]+.+$/
       old_columns = old_header && old_header.scan(column_pattern).sort
       new_columns = new_header && new_header.scan(column_pattern).sort
+
+      # remove indentation from old content for comparison
+      old_columns.each { |c| c.gsub!(/^ *#/, '#') }
 
       return false if old_columns == new_columns && !options[:force]
 
@@ -386,28 +392,55 @@ module AnnotateModels
       wrapper_close = options[:wrapper_close] ? "# #{options[:wrapper_close]}\n" : ""
       wrapped_info_block = "#{wrapper_open}#{info_block}#{wrapper_close}"
 
+      module_block = old_content[MODULE_BLOCK_MATCHER] || ''
+      unless module_block.empty?
+        wrapped_info_block = indent_content(wrapped_info_block, module_block.lines.length * 2)
+      end
+
       old_annotation = old_content.match(annotate_pattern(options)).to_s
 
       # if there *was* no old schema info or :force was passed, we simply
       # need to insert it in correct position
       if old_annotation.empty? || options[:force]
-        magic_comments_block = magic_comments_as_string(old_content)
-        old_content.gsub!(MAGIC_COMMENT_MATCHER, '')
         old_content.sub!(annotate_pattern(options), '')
 
-        new_content = if %w(after bottom).include?(options[position].to_s)
-                        magic_comments_block + (old_content.rstrip + "\n\n" + wrapped_info_block)
-                      elsif magic_comments_block.empty?
-                        magic_comments_block + wrapped_info_block + old_content.lstrip
-                      else
-                        magic_comments_block + "\n" + wrapped_info_block + old_content.lstrip
-                      end
+        if %w(after bottom).include?(options[position].to_s)
+          module_end_block = ''
+          unless module_block.empty?
+            # build expected end block for each nested module with no extra lines between end statements
+            module_end_block = (module_block.lines.length - 1).downto(0).map { |l| (' ' * l * 2) + 'end' }.join("\n")
+            # remove an identical end block.
+            old_content.gsub!("\n#{module_end_block}", '')
+          end
+          new_content = old_content.rstrip + "\n\n" + wrapped_info_block + module_end_block
+        else
+          magic_comments_block = magic_comments_as_string(old_content)
+          old_content.gsub!(MAGIC_COMMENT_MATCHER, '')
+
+          unless module_block.empty?
+            # remove the module block.
+            old_content.gsub!(/\n?#{module_block}/, '')
+          end
+
+          if magic_comments_block.empty?
+            new_content = module_block + wrapped_info_block + old_content
+          elsif module_block.empty?
+            new_content = magic_comments_block + "\n" + wrapped_info_block + old_content.lstrip
+          else
+            new_content = magic_comments_block + "\n" + module_block.lstrip + wrapped_info_block + old_content
+          end
+        end
       else
         # replace the old annotation with the new one
 
         # keep the surrounding whitespace the same
         space_match = old_annotation.match(/\A(?<start>\s*).*?\n(?<end>\s*)\z/m)
         new_annotation = space_match[:start] + wrapped_info_block + space_match[:end]
+
+        unless module_block.empty?
+          # remove extra indentation for the first line.
+          new_annotation = new_annotation[(module_block.lines.length * 2)..-1]
+        end
 
         new_content = old_content.sub(annotate_pattern(options), new_annotation)
       end
@@ -424,6 +457,10 @@ module AnnotateModels
       else
         ''
       end
+    end
+
+    def indent_content(content, indentation)
+      content.lines.map { |line| ' ' * indentation + line }.join
     end
 
     def remove_annotation_of_file(file_name, options = {})
