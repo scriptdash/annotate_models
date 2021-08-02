@@ -2729,7 +2729,7 @@ describe AnnotateModels do
         EOS
         annotate_one_file position: :before
         expect(File.read(@model_file_name)).to eq(
-          <<~HEREDOC,
+          <<~HEREDOC
             module Foo
               # == Schema Info
               #
@@ -2786,7 +2786,7 @@ describe AnnotateModels do
         EOS
         annotate_one_file position: :after
         expect(File.read(@model_file_name)).to eq(
-          <<~HEREDOC,
+          <<~HEREDOC
             module Foo
               # my docs
               class User < ActiveRecord::Base
