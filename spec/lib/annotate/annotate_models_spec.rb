@@ -2539,13 +2539,14 @@ describe AnnotateModels do
     def annotate_one_file(options = {})
       Annotate.set_defaults(options)
       options = Annotate.setup_options(options)
-      AnnotateModels.annotate_one_file(@model_file_name, @schema_info, :position_in_class, options)
+      result = AnnotateModels.annotate_one_file(@model_file_name, @schema_info, :position_in_class, options)
 
       # Wipe settings so the next call will pick up new values...
       Annotate.instance_variable_set('@has_set_defaults', false)
       Annotate::Constants::POSITION_OPTIONS.each { |key| ENV[key.to_s] = '' }
       Annotate::Constants::FLAG_OPTIONS.each { |key| ENV[key.to_s] = '' }
       Annotate::Constants::PATH_OPTIONS.each { |key| ENV[key.to_s] = '' }
+      result
     end
 
     ['before', :before, 'top', :top].each do |position|
@@ -2568,6 +2569,60 @@ describe AnnotateModels do
       annotate_one_file wrapper_open: 'START', wrapper_close: 'END'
       expect(File.read(@model_file_name))
         .to eq("# START\n#{@schema_info}# END\n#{@file_content}")
+    end
+
+    describe 'handles nested namespaced models without magic comments' do
+      before do
+        _, file_content = write_model 'user.rb', <<~EOS
+          module Foo
+            # my docs
+            class User < ActiveRecord::Base
+            end
+          end
+        EOS
+
+        @indented_schema = AnnotateModels.indent_content(@schema_info, 2)
+        @class_block = file_content.lines[1...-1].join[0...-1]
+      end
+
+      it 'should place the comment above the class when before' do
+        annotate_one_file position: :before
+        expect(File.read(@model_file_name)).to eq("module Foo\n#{@indented_schema}#{@class_block}\nend\n")
+      end
+
+      it 'should place the comment below the class when after' do
+        annotate_one_file position: :after
+        expect(File.read(@model_file_name)).to eq("module Foo\n#{@class_block}\n\n#{@indented_schema}end\n")
+      end
+    end
+
+    describe 'handles nested namespaced models with magic comments' do
+      before do
+        _, file_content = write_model 'user.rb', <<~EOS
+          # frozen_string_literal: true
+
+          module Foo
+            # my docs
+            class User < ActiveRecord::Base
+            end
+          end
+        EOS
+
+        @indented_schema = AnnotateModels.indent_content(@schema_info, 2)
+        @class_block = file_content.lines[3...-1].join[0...-1]
+      end
+
+      it 'should place the comment above the class when before' do
+        annotate_one_file position: :before
+        expect(File.read(@model_file_name))
+          .to eq("# frozen_string_literal: true\n\nmodule Foo\n#{@indented_schema}#{@class_block}\nend\n")
+      end
+
+      it 'should place the comment below the class when after' do
+        annotate_one_file position: :after
+        expect(File.read(@model_file_name))
+          .to eq("# frozen_string_literal: true\n\nmodule Foo\n#{@class_block}\n\n#{@indented_schema}end\n")
+      end
     end
 
     describe 'with existing annotation' do
@@ -2634,6 +2689,58 @@ describe AnnotateModels do
         annotate_one_file position: :after, force: true
         expect(File.read(@model_file_name)).to eq("#{@file_content}\n#{@schema_info}")
       end
+
+      it 'should skip nested namespaced models that did not change' do
+        write_model 'user.rb', <<~EOS
+          module Foo
+            # == Schema Info
+            #
+            # Table name: users
+            #
+            #  id :integer          not null, primary key
+            #
+
+            # my docs
+            class User < ActiveRecord::Base
+            end
+          end
+        EOS
+        expect(annotate_one_file(position: :before)).to be_falsy
+      end
+
+      it 'should retain the current position for nested namesapced models' do
+        write_model 'user.rb', <<~EOS
+          module Foo
+            # == Schema Info
+            #
+            # Table name: users
+            #
+            #  id :integer          not null, primary key
+            #  user_id              indexed
+
+            # my docs
+            class User < ActiveRecord::Base
+            end
+          end
+        EOS
+        annotate_one_file position: :before
+        expect(File.read(@model_file_name)).to eq(
+          <<~HEREDOC
+            module Foo
+              # == Schema Info
+              #
+              # Table name: users
+              #
+              #  id :integer          not null, primary key
+              #
+
+              # my docs
+              class User < ActiveRecord::Base
+              end
+            end
+          HEREDOC
+        )
+      end
     end
 
     describe 'with existing annotation => :after' do
@@ -2656,6 +2763,39 @@ describe AnnotateModels do
       it 'should change position to :before when force: true' do
         annotate_one_file position: :before, force: true
         expect(File.read(@model_file_name)).to eq("#{@schema_info}#{@file_content}")
+      end
+
+      it 'should retain the current position for nested namesapced models' do
+        write_model 'user.rb', <<~EOS
+          module Foo
+            # my docs
+            class User < ActiveRecord::Base
+            end
+            # == Schema Info
+            #
+            # Table name: users
+            #
+            #  id :integer          not null, primary key
+            #  user_id              indexed
+            #
+          end
+        EOS
+        annotate_one_file position: :after
+        expect(File.read(@model_file_name)).to eq(
+          <<~HEREDOC
+            module Foo
+              # my docs
+              class User < ActiveRecord::Base
+              end
+              # == Schema Info
+              #
+              # Table name: users
+              #
+              #  id :integer          not null, primary key
+              #
+            end
+          HEREDOC
+        )
       end
     end
 
