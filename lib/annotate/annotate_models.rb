@@ -404,32 +404,11 @@ module AnnotateModels
       if old_annotation.empty? || options[:force]
         old_content.sub!(annotate_pattern(options), '')
 
-        if %w(after bottom).include?(options[position].to_s)
-          module_end_block = ''
-          unless module_block.empty?
-            # build expected end block for each nested module with no extra lines between end statements
-            module_end_block = (module_block.lines.length - 1).downto(0).map { |l| (' ' * l * 2) + 'end' }.join("\n")
-            # remove an identical end block.
-            old_content.gsub!("\n#{module_end_block}", '')
-          end
-          new_content = old_content.rstrip + "\n\n" + wrapped_info_block + module_end_block
-        else
-          magic_comments_block = magic_comments_as_string(old_content)
-          old_content.gsub!(MAGIC_COMMENT_MATCHER, '')
-
-          unless module_block.empty?
-            # remove the module block.
-            old_content.gsub!(/\n?#{module_block}/, '')
-          end
-
-          if magic_comments_block.empty?
-            new_content = module_block + wrapped_info_block + old_content
-          elsif module_block.empty?
-            new_content = magic_comments_block + "\n" + wrapped_info_block + old_content.lstrip
-          else
-            new_content = magic_comments_block + "\n" + module_block.lstrip + wrapped_info_block + old_content
-          end
-        end
+        new_content = if %w(after bottom).include?(options[position].to_s)
+                        build_new_content_after(wrapped_info_block, old_content, module_block)
+                      else
+                        build_new_content_before(wrapped_info_block, old_content, module_block)
+                      end
       else
         # replace the old annotation with the new one
 
@@ -447,6 +426,35 @@ module AnnotateModels
 
       File.open(file_name, 'wb') { |f| f.puts new_content }
       true
+    end
+
+    def build_new_content_after(wrapped_info_block, old_content, module_block)
+      module_end_block = ''
+      unless module_block.empty?
+        # build expected end block for each nested module with no extra lines between end statements
+        module_end_block = (module_block.lines.length - 1).downto(0).map { |l| (' ' * l * 2) + 'end' }.join("\n")
+        # remove an identical end block.
+        old_content.gsub!("\n#{module_end_block}", '')
+      end
+      old_content.rstrip + "\n\n" + wrapped_info_block + module_end_block
+    end
+
+    def build_new_content_before(wrapped_info_block, old_content, module_block)
+      magic_comments_block = magic_comments_as_string(old_content)
+      old_content.gsub!(MAGIC_COMMENT_MATCHER, '')
+
+      unless module_block.empty?
+        # remove the module block.
+        old_content.gsub!(/\n?#{module_block}/, '')
+      end
+
+      if magic_comments_block.empty?
+        module_block + wrapped_info_block + old_content
+      elsif module_block.empty?
+        magic_comments_block + "\n" + wrapped_info_block + old_content.lstrip
+      else
+        magic_comments_block + "\n" + module_block.lstrip + wrapped_info_block + old_content
+      end
     end
 
     def magic_comments_as_string(content)
