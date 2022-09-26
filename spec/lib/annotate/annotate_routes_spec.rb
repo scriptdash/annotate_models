@@ -49,13 +49,13 @@ describe AnnotateRoutes do
         expect(File).to receive(:exist?).with(ROUTE_FILE).and_return(true).once
         expect(File).to receive(:read).with(ROUTE_FILE).and_return(route_file_content).once
 
-        expect(AnnotateRoutes::HeaderGenerator).to receive(:`).with('rake routes').and_return(rake_routes_result).once
+        expect(AnnotateRoutes::HeaderGenerator).to receive(:`).with('rails routes').and_return(rails_routes_result).once
       end
 
-      context 'When the result of `rake routes` is present' do
-        context 'When the result of `rake routes` does not contain Rake version' do
+      context 'When the result of `rails routes` is present' do
+        context 'When the result of `rails routes` does not contain rails version' do
           context 'When the file does not contain magic comment' do
-            let :rake_routes_result do
+            let :rails_routes_result do
               <<-EOS
                                       Prefix Verb       URI Pattern                                               Controller#Action
                                    myaction1 GET        /url1(.:format)                                           mycontroller1#action
@@ -149,7 +149,7 @@ describe AnnotateRoutes do
                   EOS
                 end
 
-                let :rake_routes_result do
+                let :rails_routes_result do
                   <<-EOS
                                       Prefix Verb       URI Pattern                                               Controller#Action
                                    myaction1 GET        /url1(.:format)                                           mycontroller1#action
@@ -236,9 +236,9 @@ describe AnnotateRoutes do
           end
         end
 
-        context 'When the result of `rake routes` contains Rake version' do
+        context 'When the result of `rails routes` contains Rake version' do
           context 'with older Rake versions' do
-            let :rake_routes_result do
+            let :rails_routes_result do
               <<~EOS.chomp
                 (in /bad/line)
                 good line
@@ -303,7 +303,7 @@ describe AnnotateRoutes do
           end
 
           context 'with newer Rake versions' do
-            let :rake_routes_result do
+            let :rails_routes_result do
               <<~EOS.chomp
                 another good line
                 good line
@@ -394,8 +394,8 @@ describe AnnotateRoutes do
         end
       end
 
-      context 'When the result of `rake routes` is blank' do
-        let :rake_routes_result do
+      context 'When the result of `rails routes` is blank' do
+        let :rails_routes_result do
           ''
         end
 
