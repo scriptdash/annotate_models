@@ -2,7 +2,7 @@ source 'https://rubygems.org'
 
 ruby '>= 2.7.0'
 
-gem 'activerecord', '>= 6.1', '< 7.1', require: false
+gem 'activerecord', '>= 6.1', '< 8.0', require: false
 gem 'rake', require: false
 
 group :development do
