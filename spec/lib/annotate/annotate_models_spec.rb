@@ -389,8 +389,8 @@ describe AnnotateModels do
 
             context 'with Globalize gem' do
               let :translation_klass do
-                double('Post::Translation',
-                       to_s: 'Post::Translation',
+                double('Folder::Post::Translation',
+                       to_s: 'Folder::Post::Translation',
                        columns: [
                          mock_column(:id, :integer, limit: 8),
                          mock_column(:post_id, :integer, limit: 8),
@@ -1181,7 +1181,10 @@ describe AnnotateModels do
                                   limit: { srid: 4326, type: 'geometry' }),
                       mock_column(:location, :geography,
                                   geometric_type: 'Point', srid: 0,
-                                  limit: { srid: 0, type: 'geometry' })
+                                  limit: { srid: 0, type: 'geometry' }),
+                      mock_column(:non_srid, :geography,
+                                  geometric_type: 'Point',
+                                  limit: { type: 'geometry' })
                     ]
                   end
 
@@ -1195,6 +1198,7 @@ describe AnnotateModels do
                       #  active   :boolean          default(FALSE), not null
                       #  geometry :geometry         not null, geometry, 4326
                       #  location :geography        not null, point, 0
+                      #  non_srid :geography        not null, point
                       #
                     EOS
                   end
@@ -1984,7 +1988,7 @@ describe AnnotateModels do
       end
     end
 
-    context 'when the file includes invlaid multibyte chars (USASCII)' do
+    context 'when the file includes invalid multibyte chars (USASCII)' do
       context 'when class FooWithUtf8 is defined in "foo_with_utf8.rb"' do
         let :filename do
           'foo_with_utf8.rb'
