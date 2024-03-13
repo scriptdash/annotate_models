@@ -260,6 +260,17 @@ module Annotate # rubocop:disable Metrics/ModuleLength
       end
     end
 
+    %w[-c --show-check-constraints].each do |option|
+      describe option do
+        let(:env_key) { 'show_check_constraints' }
+        let(:set_value) { 'yes' }
+        it 'sets the ENV variable' do
+          expect(ENV).to receive(:[]=).with(env_key, set_value)
+          Parser.parse([option])
+        end
+      end
+    end
+
     %w[-k --show-foreign-keys].each do |option|
       describe option do
         let(:env_key) { 'show_foreign_keys' }
@@ -543,6 +554,16 @@ module Annotate # rubocop:disable Metrics/ModuleLength
     describe '--with-comment' do
       let(:option) { '--with-comment' }
       let(:env_key) { 'with_comment' }
+      let(:set_value) { 'true' }
+      it 'sets the ENV variable' do
+        expect(ENV).to receive(:[]=).with(env_key, set_value)
+        Parser.parse([option])
+      end
+    end
+
+    describe '--with-comment-column' do
+      let(:option) { '--with-comment-column' }
+      let(:env_key) { 'with_comment_column' }
       let(:set_value) { 'true' }
       it 'sets the ENV variable' do
         expect(ENV).to receive(:[]=).with(env_key, set_value)

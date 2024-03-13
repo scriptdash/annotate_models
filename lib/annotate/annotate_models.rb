@@ -124,14 +124,18 @@ module AnnotateModels
 
       # Try to search the table without prefix
       table_name_without_prefix = table_name.to_s.sub(klass.table_name_prefix, '')
-      klass.connection.indexes(table_name_without_prefix)
+      if klass.connection.table_exists?(table_name_without_prefix)
+        klass.connection.indexes(table_name_without_prefix)
+      else
+        []
+      end
     end
 
     # Use the column information in an ActiveRecord class
     # to create a comment block containing a line for
     # each column. The line contains the column name,
     # the type (and length), and any optional attributes
-    def get_schema_info(klass, header, options = {})
+    def get_schema_info(klass, header, options = {}) # rubocop:disable Metrics/MethodLength
       info = "# #{header}\n"
       info << get_schema_header_text(klass, options)
 
@@ -142,18 +146,37 @@ module AnnotateModels
 
       if options[:format_markdown]
         info << sprintf( "# %-#{max_size + md_names_overhead}.#{max_size + md_names_overhead}s | %-#{md_type_allowance}.#{md_type_allowance}s | %s\n", 'Name', 'Type', 'Attributes' )
+
         info << "# #{ '-' * ( max_size + md_names_overhead ) } | #{'-' * md_type_allowance} | #{ '-' * 27 }\n"
       end
 
       cols = columns(klass, options)
-      cols.each do |col|
+      with_comments = with_comments?(klass, options)
+      with_comments_column = with_comments_column?(klass, options)
+
+      # Precalculate Values
+      cols_meta = cols.map do |col|
+        col_comment = with_comments || with_comments_column ? col.comment&.gsub(/\n/, "\\n") : nil
         col_type = get_col_type(col)
         attrs = get_attributes(col, col_type, klass, options)
-        col_name = if with_comments?(klass, options) && col.comment
-                     "#{col.name}(#{col.comment.gsub(/\n/, "\\n")})"
+        col_name = if with_comments && col_comment
+                     "#{col.name}(#{col_comment})"
                    else
                      col.name
                    end
+        simple_formatted_attrs = attrs.join(", ")
+        [col.name, { col_type: col_type, attrs: attrs, col_name: col_name, simple_formatted_attrs: simple_formatted_attrs, col_comment: col_comment }]
+      end.to_h
+
+      # Output annotation
+      bare_max_attrs_length = cols_meta.map { |_, m| m[:simple_formatted_attrs].length }.max
+
+      cols.each do |col|
+        col_type = cols_meta[col.name][:col_type]
+        attrs = cols_meta[col.name][:attrs]
+        col_name = cols_meta[col.name][:col_name]
+        simple_formatted_attrs = cols_meta[col.name][:simple_formatted_attrs]
+        col_comment = cols_meta[col.name][:col_comment]
 
         if options[:format_rdoc]
           info << sprintf("# %-#{max_size}.#{max_size}s<tt>%s</tt>", "*#{col_name}*::", attrs.unshift(col_type).join(", ")).rstrip + "\n"
@@ -165,8 +188,10 @@ module AnnotateModels
           name_remainder = max_size - col_name.length - non_ascii_length(col_name)
           type_remainder = (md_type_allowance - 2) - col_type.length
           info << (sprintf("# **`%s`**%#{name_remainder}s | `%s`%#{type_remainder}s | `%s`", col_name, " ", col_type, " ", attrs.join(", ").rstrip)).gsub('``', '  ').rstrip + "\n"
+        elsif with_comments_column
+          info << format_default(col_name, max_size, col_type, bare_type_allowance, simple_formatted_attrs, bare_max_attrs_length, col_comment)
         else
-          info << format_default(col_name, max_size, col_type, bare_type_allowance, attrs)
+          info << format_default(col_name, max_size, col_type, bare_type_allowance, simple_formatted_attrs)
         end
       end
 
@@ -176,6 +201,10 @@ module AnnotateModels
 
       if options[:show_foreign_keys] && klass.table_exists?
         info << get_foreign_key_info(klass, options)
+      end
+
+      if options[:show_check_constraints] && klass.table_exists?
+        info << get_check_constraint_info(klass, options)
       end
 
       info << get_schema_footer_text(klass, options)
@@ -231,7 +260,7 @@ module AnnotateModels
         'bigint'
       else
         (col.type || col.sql_type).to_s
-      end
+      end.dup
     end
 
     def index_columns_info(index)
@@ -350,6 +379,35 @@ module AnnotateModels
       end
 
       fk_info
+    end
+
+    def get_check_constraint_info(klass, options = {})
+      cc_info = if options[:format_markdown]
+                  "#\n# ### Check Constraints\n#\n"
+                else
+                  "#\n# Check Constraints\n#\n"
+                end
+
+      return '' unless klass.connection.respond_to?(:supports_check_constraints?) &&
+        klass.connection.supports_check_constraints? && klass.connection.respond_to?(:check_constraints)
+
+      check_constraints = klass.connection.check_constraints(klass.table_name)
+      return '' if check_constraints.empty?
+
+      max_size = check_constraints.map { |check_constraint| check_constraint.name.size }.max + 1
+      check_constraints.sort_by(&:name).each do |check_constraint|
+        expression = check_constraint.expression ? "(#{check_constraint.expression.squish})" : nil
+
+        cc_info << if options[:format_markdown]
+                     cc_info_markdown = sprintf("# * `%s`", check_constraint.name)
+                     cc_info_markdown << sprintf(": `%s`", expression) if expression
+                     cc_info_markdown << "\n"
+                   else
+                     sprintf("#  %-#{max_size}.#{max_size}s %s", check_constraint.name, expression).rstrip + "\n"
+                   end
+      end
+
+      cc_info
     end
 
     # Add a schema block to a file. If the file already contains
@@ -608,7 +666,8 @@ module AnnotateModels
       # auto_load/eager_load paths. Try all possible model paths one by one.
       absolute_file = File.expand_path(file)
       model_paths =
-        $LOAD_PATH.select { |path| absolute_file.include?(path) }
+        $LOAD_PATH.map(&:to_s)
+                  .select { |path| absolute_file.include?(path) }
                   .map { |path| absolute_file.sub(path, '').sub(/\.rb$/, '').sub(/^\//, '') }
       model_paths
         .map { |path| get_loaded_model_by_path(path) }
@@ -617,9 +676,7 @@ module AnnotateModels
 
     # Retrieve loaded model class by path to the file where it's supposed to be defined.
     def get_loaded_model_by_path(model_path)
-      klass = ActiveSupport::Inflector.constantize(ActiveSupport::Inflector.camelize(model_path))
-
-      klass if klass.is_a?(Class) && klass < ActiveRecord::Base
+      ActiveSupport::Inflector.constantize(ActiveSupport::Inflector.camelize(model_path))
     rescue StandardError, LoadError
       # Revert to the old way but it is not really robust
       ObjectSpace.each_object(::Class)
@@ -762,6 +819,12 @@ module AnnotateModels
         klass.columns.any? { |col| !col.comment.nil? }
     end
 
+    def with_comments_column?(klass, options)
+      options[:with_comment_column] &&
+        klass.columns.first.respond_to?(:comment) &&
+        klass.columns.any? { |col| !col.comment.nil? }
+    end
+
     def max_schema_info_width(klass, options)
       cols = columns(klass, options)
 
@@ -778,8 +841,15 @@ module AnnotateModels
       max_size
     end
 
-    def format_default(col_name, max_size, col_type, bare_type_allowance, attrs)
-      sprintf("#  %s:%s %s", mb_chars_ljust(col_name, max_size), mb_chars_ljust(col_type, bare_type_allowance),  attrs.join(", ")).rstrip + "\n"
+    # rubocop:disable Metrics/ParameterLists
+    def format_default(col_name, max_size, col_type, bare_type_allowance, simple_formatted_attrs, bare_max_attrs_length = 0, col_comment = nil)
+      sprintf(
+        "#  %s:%s %s   %s",
+        mb_chars_ljust(col_name, max_size),
+        mb_chars_ljust(col_type, bare_type_allowance),
+        mb_chars_ljust(simple_formatted_attrs, bare_max_attrs_length),
+        col_comment
+      ).rstrip + "\n"
     end
 
     def width(string)
@@ -847,9 +917,7 @@ module AnnotateModels
       # Construct the foreign column name in the translations table
       # eg. Model: Car, foreign column name: car_id
       foreign_column_name = [
-        klass.translation_class.to_s
-             .gsub('::Translation', '').gsub('::', '_')
-             .downcase,
+        klass.table_name.to_s.singularize,
         '_id'
       ].join.to_sym
 
@@ -890,9 +958,9 @@ module AnnotateModels
       # Check out if we got a geometric column
       # and print the type and SRID
       if column.respond_to?(:geometry_type)
-        attrs << "#{column.geometry_type}, #{column.srid}"
+        attrs << [column.geometry_type, column.try(:srid)].compact.join(', ')
       elsif column.respond_to?(:geometric_type) && column.geometric_type.present?
-        attrs << "#{column.geometric_type.to_s.downcase}, #{column.srid}"
+        attrs << [column.geometric_type.to_s.downcase, column.try(:srid)].compact.join(', ')
       end
 
       # Check if the column has indices and print "indexed" if true

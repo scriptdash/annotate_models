@@ -33,3 +33,8 @@ require 'annotate/parser'
 require 'annotate/helpers'
 require 'annotate/constants'
 require 'byebug'
+
+RSpec.configure do |config|
+  config.order = 'random'
+  config.filter_run_when_matching :focus
+end
