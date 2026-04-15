@@ -43,3 +43,6 @@ end
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
 gem 'tzinfo-data', platforms: [:mingw, :mswin, :x64_mingw, :jruby]
+
+# activesupport 7.0.4 references Logger before it's loaded when logger >= 1.6
+gem 'logger', '< 1.6'
