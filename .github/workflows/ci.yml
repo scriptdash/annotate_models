@@ -24,6 +24,7 @@ jobs:
         uses: ruby/setup-ruby@v1.79.0
         with:
           ruby-version: ${{ matrix.ruby }}
+          bundler: 2.4.22
 
       - name: Install sqlite
         run: |
