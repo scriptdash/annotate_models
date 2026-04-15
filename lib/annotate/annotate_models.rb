@@ -49,6 +49,11 @@ module AnnotateModels
       # Match consecutive comment lines that are NOT YARD tags (e.g. @owners).
       # The negative lookahead `(?![ \t]*@\w)` stops the pattern before lines like
       # `# @owners { team: foo }`, preserving them through re-annotation.
+      #
+      # The possessive quantifier ` *+` (instead of ` *`) prevents ReDoS: without it,
+      # the engine can backtrack into already-matched leading spaces when the outer `*`
+      # repeats, causing polynomial blowup on inputs with many spaces not followed by `#`.
+      # `[^\r\n]*` is used instead of `.*` to be explicit that only non-newline chars match.
       comment_line_pattern = '( *+#(?![ \t]*@\w)[^\r\n]*(\n|\r\n))*'
       if options[:wrapper_open]
         return /(?:^(\n|\r\n)? *# (?:#{options[:wrapper_open]}).*(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*)|^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*/ # rubocop:disable Layout/LineLength
