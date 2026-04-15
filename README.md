@@ -15,6 +15,7 @@ Add a comment summarizing the current schema to the top or bottom of each of you
 - Tests and Specs
 - Object Daddy exemplars
 - Machinist blueprints
+- test readme change
 - Fabrication fabricators
 - Thoughtbot's factory_bot factories, i.e. the `(spec|test)/factories/<model>_factory.rb` files
 - `routes.rb` file (for Rails projects)
