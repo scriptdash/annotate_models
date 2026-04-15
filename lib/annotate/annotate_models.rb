@@ -51,7 +51,7 @@ module AnnotateModels
       # `# @owners { team: foo }`, preserving them through re-annotation.
       comment_line_pattern = '( *+#(?![ \t]*@\w)[^\r\n]*(\n|\r\n))*'
       if options[:wrapper_open]
-        return /(?:^(\n|\r\n)? *# (?:#{options[:wrapper_open]}).*(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*)|^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*/
+        return /(?:^(\n|\r\n)? *# (?:#{options[:wrapper_open]}).*(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*)|^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*/ # rubocop:disable Layout/LineLength
       end
       /^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*/
     end
