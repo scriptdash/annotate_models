@@ -49,7 +49,7 @@ module AnnotateModels
       # Match consecutive comment lines that are NOT YARD tags (e.g. @owners).
       # The negative lookahead `(?![ \t]*@\w)` stops the pattern before lines like
       # `# @owners { team: foo }`, preserving them through re-annotation.
-      comment_line_pattern = '( *#(?![ \t]*@\w).*(\n|\r\n))*'
+      comment_line_pattern = '( *+#(?![ \t]*@\w)[^\r\n]*(\n|\r\n))*'
       if options[:wrapper_open]
         return /(?:^(\n|\r\n)? *# (?:#{options[:wrapper_open]}).*(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*)|^(\n|\r\n)? *# (?:#{COMPAT_PREFIX}|#{COMPAT_PREFIX_MD}).*?(\n|\r\n)#{comment_line_pattern}(\n|\r\n)*/
       end
